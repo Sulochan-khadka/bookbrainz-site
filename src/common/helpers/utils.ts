@@ -2,6 +2,7 @@ import {EntityType, Relationship, RelationshipForDisplay} from '../../client/ent
 
 import {isString, kebabCase, toString, upperFirst} from 'lodash';
 import {IdentifierType} from '../../client/unified-form/interface/type';
+import type {LazyLoadedEntityT} from 'bookbrainz-data/lib/types/entity';
 
 /**
  * Regular expression for valid BookBrainz UUIDs (bbid)
@@ -170,7 +171,6 @@ export function getEntityLink(entity: {type: string, bbid: string}): string {
 	return `/${kebabCase(entity.type)}/${entity.bbid}`;
 }
 
-
 export function getNextEnabledAndResultsArray(array, size) {
 	if (array.length > size) {
 		while (array.length > size) {
@@ -316,6 +316,15 @@ export async function getEntityAlias(orm, bbid:string, type:EntityType):Promise<
 	}
 	const entityData = await orm.func.entity.getEntity(orm, upperFirst(type), bbid, []);
 	return entityData;
+}
+
+export function getAliasLanguageCodes(entity: LazyLoadedEntityT) {
+	return entity.aliasSet?.aliases
+		.map((alias) => alias.language?.isoCode1)
+		// less common languages (and [Multiple languages]) do not have a two-letter ISO code, ignore them for now
+		.filter((language) => language !== null)
+		// eslint-disable-next-line operator-linebreak -- fallback refers to the whole optional chain
+		?? [];
 }
 
 export function filterObject(obj, filter) {

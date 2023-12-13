@@ -30,7 +30,7 @@ import {
 	entityMergeMarkup,
 	generateEntityMergeProps
 } from '../helpers/entityRouteUtils';
-
+import {PrivilegeType} from '../../common/helpers/privileges-utils';
 import _ from 'lodash';
 import {escapeProps} from '../helpers/props';
 import express from 'express';
@@ -38,10 +38,7 @@ import renderRelationship from '../helpers/render';
 import targetTemplate from '../templates/target';
 
 
-type PassportRequest = express.Request & {
-	user: any,
-	session: any
-};
+const {ENTITY_EDITOR} = PrivilegeType;
 
 const router = express.Router();
 
@@ -174,6 +171,12 @@ function entitiesToFormState(entities: any[]) {
 }
 
 async function loadEntityRelationships(entity, orm, transacting): Promise<any> {
+	async function getEntityWithAlias(relEntity) {
+		const redirectBbid = await orm.func.entity.recursivelyGetRedirectBBID(orm, relEntity.bbid, null);
+		const model = commonUtils.getEntityModelByType(orm, relEntity.type);
+		return model.forge({bbid: redirectBbid})
+		  .fetch({require: true, withRelated: ['defaultAlias'].concat(getAdditionalRelations(relEntity.type))});
+	}
 	const {RelationshipSet} = orm;
 
 	// Default to empty array, its presence is expected down the line
@@ -183,85 +186,75 @@ async function loadEntityRelationships(entity, orm, transacting): Promise<any> {
 		return null;
 	}
 	try {
-	  const relationshipSet = await RelationshipSet.forge({ id: entity.relationshipSetId })
-		.fetch({
-			transacting,
-			withRelated: [
-				'relationships.source',
-				'relationships.target',
-				'relationships.type.attributeTypes',
-				'relationships.attributeSet.relationshipAttributes.value',
-				'relationships.attributeSet.relationshipAttributes.type'
-			]
-		})
-	  if (relationshipSet) {
-		entity.relationships = relationshipSet.related('relationships').toJSON();
-	  }
-  
+	  const relationshipSet = await RelationshipSet.forge({id: entity.relationshipSetId})
+			.fetch({
+				transacting,
+				withRelated: [
+					'relationships.source',
+					'relationships.target',
+					'relationships.type.attributeTypes',
+					'relationships.attributeSet.relationshipAttributes.value',
+					'relationships.attributeSet.relationshipAttributes.type'
+				]
+			});
+		if (relationshipSet) {
+			entity.relationships = relationshipSet.related('relationships').toJSON();
+		}
+
 	  attachAttributes(entity.relationships);
-  
-	  async function getEntityWithAlias(relEntity) {
-		const redirectBbid = await orm.func.entity.recursivelyGetRedirectBBID(orm, relEntity.bbid, null);
-		const model = commonUtils.getEntityModelByType(orm, relEntity.type);
-  
-		return model.forge({ bbid: redirectBbid })
-		  .fetch({ require: true, withRelated: ['defaultAlias'].concat(getAdditionalRelations(relEntity.type)) });
-	  }
-  
+
 	  /**
 	   * Source and target are generic Entity objects, so until we have
 	   * a good way of polymorphically fetching the right specific entity,
 	   * we need to fetch default alias in a somewhat sketchier way.
 	   */
 	  const relationships = await Promise.all(entity.relationships.map(async (relationship) => {
-		const [relationshipSource, relationshipTarget] = await Promise.all([
-		  getEntityWithAlias(relationship.source),
-		  getEntityWithAlias(relationship.target)
-		]);
-  
-		relationship.source = relationshipSource.toJSON();
-		relationship.target = relationshipTarget.toJSON();
-  
-		return relationship;
+			const [relationshipSource, relationshipTarget] = await Promise.all([
+				getEntityWithAlias(relationship.source),
+				getEntityWithAlias(relationship.target)
+			]);
+
+			relationship.source = relationshipSource.toJSON();
+			relationship.target = relationshipTarget.toJSON();
+			return relationship;
 	  }));
-  
+
 	  // Set rendered relationships on relationship objects
-	  relationships.forEach((relationship) => {
-		relationship.rendered = renderRelationship(relationship);
-	  });
-  
+		relationships.forEach((relationship) => {
+			relationship.rendered = renderRelationship(relationship);
+		});
 	  return entity;
-	} catch (error) {
-	  console.error(error);
 	}
-  }
+	catch (error) {
+		/* eslint-disable no-console */
+		console.error(error);
+		/* eslint-enable no-console */
+	}
+	return null;
+}
 async function getEntityByBBID(orm, transacting, bbid) {
-	try {
 	const redirectBbid = await orm.func.entity.recursivelyGetRedirectBBID(orm, bbid, transacting);
 	const entityHeader = await orm.Entity.forge({bbid: redirectBbid}).fetch({transacting});
 	const entityType = entityHeader.get('type');
 	const model = commonUtils.getEntityModelByType(orm, entityType);
 
-		const entity = await model.forge({bbid: redirectBbid})
-			.fetch({
-				require: true,
-				transacting,
-				withRelated: basicRelations.concat(getEntityFetchPropertiesByType(entityType))
-			});
+	const entity = await model.forge({bbid: redirectBbid})
+		.fetch({
+			require: true,
+			transacting,
+			withRelated: basicRelations.concat(getEntityFetchPropertiesByType(entityType))
+		});
 
-		const entityJSON = entity.toJSON();
-		await loadEntityRelationships(entityJSON, orm, transacting);
+	const entityJSON = entity.toJSON();
+	await loadEntityRelationships(entityJSON, orm, transacting);
 
-		// Return the loaded entity as JSON
-		return entityJSON;
-	} catch (error) {
-		throw error;
-	}
+	// Return the loaded entity as JSON
+	return entityJSON;
 }
 
 
-router.get('/add/:bbid', auth.isAuthenticated,
-	async (req: PassportRequest, res, next) => {
+router.get('/add/:bbid', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR),
+	async (req, res, next) => {
 		const {orm}: {orm?: any} = req.app.locals;
 		let {mergeQueue} = req.session;
 		if (_.isNil(req.params.bbid) ||
@@ -316,8 +309,8 @@ router.get('/add/:bbid', auth.isAuthenticated,
 		return res.redirect(req.headers.referer);
 	});
 
-router.get('/remove/:bbid', auth.isAuthenticated,
-	(req: PassportRequest, res) => {
+router.get('/remove/:bbid', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR),
+	(req, res) => {
 		const {mergeQueue} = req.session;
 		if (!mergeQueue || _.isNil(req.params.bbid)) {
 			res.redirect(req.headers.referer);
@@ -335,16 +328,16 @@ router.get('/remove/:bbid', auth.isAuthenticated,
 		res.redirect(req.headers.referer);
 	});
 
-router.get('/cancel', auth.isAuthenticated,
-	(req: PassportRequest, res) => {
+router.get('/cancel', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR),
+	(req, res) => {
 		req.session.mergeQueue = null;
 		res.redirect(req.headers.referer);
 	});
 
-router.get('/submit/:targetBBID?', auth.isAuthenticated,
+router.get('/submit/:targetBBID?', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR),
 	middleware.loadIdentifierTypes, middleware.loadLanguages,
 	middleware.loadRelationshipTypes,
-	async (req: PassportRequest, res, next) => {
+	async (req, res, next) => {
 		const {orm}: {orm?: any} = req.app.locals;
 		const {bookshelf} = orm;
 		const {mergeQueue} = req.session;

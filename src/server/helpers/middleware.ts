@@ -1,8 +1,10 @@
 /*
  * Copyright (C) 2015       Ben Ockmore
  *               2015-2016  Sean Burke
- *				 2021       Akash Gupta
- *				 2022       Ansh Goyal
+ *               2021       Akash Gupta
+ *               2022       Ansh Goyal
+ *               2023       David Kellner
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -22,10 +24,14 @@ import * as commonUtils from '../../common/helpers/utils';
 import * as error from '../../common/helpers/error';
 import * as utils from '../helpers/utils';
 import type {Response as $Response, NextFunction, Request} from 'express';
+import {ENTITY_TYPES, getRelationshipTargetBBIDByTypeId} from '../../client/helpers/entity';
+import {getWikipediaExtract, selectWikipediaPage} from './wikimedia';
 
 import _ from 'lodash';
-import {getRelationshipTargetBBIDByTypeId} from '../../client/helpers/entity';
+import {getAcceptedLanguageCodes} from './i18n';
 import {getReviewsFromCB} from './critiquebrainz';
+import {getWikidataId} from '../../common/helpers/wikimedia';
+import log from 'log';
 
 
 interface $Request extends Request {
@@ -41,11 +47,9 @@ function makeLoader(modelName, propName, sortFunc?, relations = []) {
 			const resultsSerial = results.toJSON();
 			res.locals[propName] =
 				sortFunc ? resultsSerial.sort(sortFunc) : resultsSerial;
-			
-			
-			}
+		}
 		catch (err) {
-			next(err);
+			return next(err);
 		}
 		next();
 		return null;
@@ -67,6 +71,12 @@ export const loadSeriesOrderingTypes =
 	makeLoader('SeriesOrderingType', 'seriesOrderingTypes');
 export const loadRelationshipTypes =
 	makeLoader('RelationshipType', 'relationshipTypes', null, ['attributeTypes']);
+export const loadParentRelationshipTypes =
+	makeLoader('RelationshipType', 'parentTypes');
+export const loadParentIdentifierTypes =
+	makeLoader('IdentifierType', 'parentTypes');
+export const loadRelationshipAttributeTypes =
+	makeLoader('RelationshipAttributeType', 'attributeTypes');
 
 export const loadGenders =
 	makeLoader('Gender', 'genders', (a, b) => a.id > b.id);
@@ -130,7 +140,6 @@ export async function loadWorkTableAuthors(req: $Request, res: $Response, next: 
  * @param {Object} entity - The entity to load the relationships for.
  * @param {Object} relationshipSet - The RelationshipSet model.
  * @param {Object} orm - The ORM instance.
- * @returns
  */
 
 export async function addRelationships(entity, relationshipSet, orm) {
@@ -188,18 +197,66 @@ export async function loadEntityRelationships(req: $Request, res: $Response, nex
 			});
 
 		await addRelationships(entity, relationshipSet, orm);
-
-		
-	} catch (err) {
-		next(err);
 	}
-	next();
+	catch (err) {
+		return next(err);
+	}
+	return next();
+}
+
+export async function loadWikipediaExtract(req: $Request, res: $Response, next: NextFunction) {
+	const {entity} = res.locals;
+	if (!entity) {
+		return next(new error.SiteError('Failed to load entity'));
+	}
+
+	const wikidataId = getWikidataId(entity);
+	if (!wikidataId) {
+		return next();
+	}
+
+	// try to use the user's browser languages, fallback to English and alias languages
+	const browserLanguages = getAcceptedLanguageCodes(req);
+	const aliasLanguages = commonUtils.getAliasLanguageCodes(entity);
+	const preferredLanguages = browserLanguages.concat('en', aliasLanguages);
+
+	try {
+		// only pre-load Wikipedia extracts which are already cached
+		const article = await selectWikipediaPage(wikidataId, {forceCache: true, preferredLanguages});
+		if (article) {
+			const extract = await getWikipediaExtract(article, {forceCache: true});
+			if (extract) {
+				res.locals.wikipediaExtract = {article, ...extract};
+			}
+		}
+	}
+	catch (err) {
+		log.warning(`Failed to pre-load Wikipedia extract for ${wikidataId}: ${err.message}`);
+	}
+
+	return next();
 }
 
 export function checkValidRevisionId(req: $Request, res: $Response, next: NextFunction, id: string) {
 	const idToNumber = _.toNumber(id);
 	if (!_.isInteger(idToNumber) || (_.isInteger(idToNumber) && idToNumber <= 0)) {
 		return next(new error.BadRequestError(`Invalid revision id: ${req.params.id}`, req));
+	}
+	return next();
+}
+
+export function checkValidTypeId(req: $Request, res: $Response, next: NextFunction, id: string) {
+	const idToNumber = _.toNumber(id);
+	if (!_.isInteger(idToNumber) || idToNumber <= 0) {
+		return next(new error.BadRequestError(`Invalid Type id: ${req.params.id}`, req));
+	}
+	return next();
+}
+
+export function checkValidEntityType(req: $Request, res: $Response, next: NextFunction, entityType: string) {
+	const entityTypes = ENTITY_TYPES.map(entity => _.snakeCase(entity));
+	if (!_.includes(entityTypes, entityType)) {
+		return next(new error.BadRequestError(`Invalid Entity Type: ${commonUtils.snakeCaseToSentenceCase(entityType)}`, req));
 	}
 	return next();
 }

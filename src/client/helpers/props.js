@@ -32,7 +32,8 @@ const LAYOUT_PROPS = [
 
 const EDITOR_PROPS = [
 	'editor',
-	'tabActive'
+	'tabActive',
+	'user'
 ];
 
 export function extractLayoutProps(props) {
@@ -55,7 +56,8 @@ export function extractEntityProps(props) {
 		entity: props.entity,
 		genderOptions: props.genderOptions,
 		identifierTypes: props.identifierTypes,
-		user: props.user
+		user: props.user,
+		wikipediaExtract: props.wikipediaExtract
 	};
 }
 

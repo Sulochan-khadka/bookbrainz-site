@@ -30,21 +30,26 @@ import {
 } from '../../helpers/entityRouteUtils';
 
 import {ConflictError} from '../../../common/helpers/error';
+import {PrivilegeType} from '../../../common/helpers/privileges-utils';
 import _ from 'lodash';
 import {escapeProps} from '../../helpers/props';
 import express from 'express';
 import log from 'log';
 import target from '../../templates/target';
 
+
 /** ****************************
 *********** Helpers ************
 *******************************/
+
+type OptionalSectionsT = {
+	annotationSection?: any
+};
 
 const additionalAuthorProps = [
 	'typeId', 'genderId', 'beginAreaId', 'beginDate', 'endDate', 'ended',
 	'endAreaId'
 ];
-
 
 export function transformNewForm(data) {
 	const aliases = entityRoutes.constructAliases(
@@ -86,6 +91,8 @@ const mergeHandler = makeEntityCreateOrEditHandler(
 	'author', transformNewForm, additionalAuthorProps, true
 );
 
+const {ENTITY_EDITOR} = PrivilegeType;
+
 /** ****************************
 *********** Routes ************
 *******************************/
@@ -94,7 +101,7 @@ const router = express.Router();
 
 // Creation
 router.get(
-	'/create', auth.isAuthenticated, middleware.loadIdentifierTypes,
+	'/create', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR), middleware.loadIdentifierTypes,
 	middleware.loadGenders, middleware.loadLanguages,
 	middleware.loadAuthorTypes, middleware.loadRelationshipTypes,
 	async (req, res) => {
@@ -134,7 +141,7 @@ router.get(
 );
 
 router.post(
-	'/create', entityRoutes.displayPreview, auth.isAuthenticatedForHandler, middleware.loadIdentifierTypes,
+	'/create', entityRoutes.displayPreview, auth.isAuthenticatedForHandler, auth.isAuthorized(ENTITY_EDITOR), middleware.loadIdentifierTypes,
 	middleware.loadGenders, middleware.loadLanguages,
 	middleware.loadAuthorTypes, middleware.loadRelationshipTypes,
 	async (req, res) => {
@@ -173,7 +180,7 @@ router.post(
 	}
 );
 
-router.post('/create/handler', auth.isAuthenticatedForHandler,
+router.post('/create/handler', auth.isAuthenticatedForHandler, auth.isAuthorized(ENTITY_EDITOR),
 	createOrEditHandler);
 
 /* If the route specifies a BBID, make sure it does not redirect to another bbid then load the corresponding entity */
@@ -185,7 +192,12 @@ router.param(
 	'bbid',
 	middleware.makeEntityLoader(
 		'Author',
-		['authorType', 'gender', 'beginArea', 'endArea'],
+		['authorType', 'gender', 'beginArea', 'endArea',
+			'authorCredits.editions.defaultAlias',
+			'authorCredits.editions.disambiguation',
+			'authorCredits.editions.releaseEventSet.releaseEvents',
+			'authorCredits.editions.identifierSet.identifiers.type',
+			'authorCredits.editions.editionFormat'],
 		'Author not found'
 	)
 );
@@ -198,12 +210,12 @@ function _setAuthorTitle(res) {
 	);
 }
 
-router.get('/:bbid', middleware.loadEntityRelationships, (req, res) => {
+router.get('/:bbid', middleware.loadEntityRelationships, middleware.loadWikipediaExtract, (req, res) => {
 	_setAuthorTitle(res);
 	entityRoutes.displayEntity(req, res);
 });
 
-router.get('/:bbid/delete', auth.isAuthenticated, (req, res, next) => {
+router.get('/:bbid/delete', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR), (req, res, next) => {
 	if (!res.locals.entity.dataId) {
 		return next(new ConflictError('This entity has already been deleted'));
 	}
@@ -212,7 +224,7 @@ router.get('/:bbid/delete', auth.isAuthenticated, (req, res, next) => {
 });
 
 router.post(
-	'/:bbid/delete/handler', auth.isAuthenticatedForHandler,
+	'/:bbid/delete/handler', auth.isAuthenticatedForHandler, auth.isAuthorized(ENTITY_EDITOR),
 	(req, res) => {
 		const {orm} = req.app.locals;
 		const {AuthorHeader, AuthorRevision} = orm;
@@ -302,7 +314,7 @@ export function authorToFormState(author) {
 		}
 	));
 
-	const optionalSections = {};
+	const optionalSections: OptionalSectionsT = {};
 	if (author.annotation) {
 		optionalSections.annotationSection = author.annotation;
 	}
@@ -320,7 +332,7 @@ export function authorToFormState(author) {
 
 
 router.get(
-	'/:bbid/edit', auth.isAuthenticated, middleware.loadIdentifierTypes,
+	'/:bbid/edit', auth.isAuthenticated, auth.isAuthorized(ENTITY_EDITOR), middleware.loadIdentifierTypes,
 	middleware.loadGenders, middleware.loadLanguages,
 	middleware.loadAuthorTypes, middleware.loadEntityRelationships,
 	middleware.loadRelationshipTypes,
@@ -341,10 +353,10 @@ router.get(
 );
 
 
-router.post('/:bbid/edit/handler', auth.isAuthenticatedForHandler,
+router.post('/:bbid/edit/handler', auth.isAuthenticatedForHandler, auth.isAuthorized(ENTITY_EDITOR),
 	createOrEditHandler);
 
-router.post('/:bbid/merge/handler', auth.isAuthenticatedForHandler,
+router.post('/:bbid/merge/handler', auth.isAuthenticatedForHandler, auth.isAuthorized(ENTITY_EDITOR),
 	mergeHandler);
 
 export default router;

@@ -28,7 +28,6 @@ import * as utils from '../../helpers/utils';
 
 import type {Request as $Request, Response as $Response, NextFunction} from 'express';
 import type {
-	EntityTypeString,
 	FormLanguageT as Language,
 	FormPublisherT as Publisher,
 	FormReleaseEventT as ReleaseEvent,
@@ -42,6 +41,7 @@ import DeletionForm from '../../../client/components/forms/deletion';
 import EditionGroupPage from '../../../client/components/pages/entities/edition-group';
 import EditionPage from '../../../client/components/pages/entities/edition';
 import EntityRevisions from '../../../client/components/pages/entity-revisions';
+import type {EntityTypeString} from 'bookbrainz-data/lib/types/entity';
 import Layout from '../../../client/containers/layout';
 import PreviewPage from '../../../client/components/forms/preview';
 import PublisherPage from '../../../client/components/pages/entities/publisher';
@@ -1360,12 +1360,11 @@ type AuthorT = {
 	id: number
 };
 
-type AuthorCreditEditorT = {
+export type AuthorCreditEditorT = {
 	author: AuthorT,
 	joinPhrase: string,
 	name: string
 };
-
 
 export function constructAuthorCredit(
 	authorCreditEditor: Record<string, AuthorCreditEditorT>

@@ -197,6 +197,13 @@ export function getEditionReleaseDate(edition) {
 	return '?';
 }
 
+export function getAuthorCreditNames(edition) {
+	if (edition.authorCreditId === null) {
+		return [];
+	}
+	return edition.authorCredit.names;
+}
+
 export function getEditionPublishers(edition) {
 	const hasPublishers = edition.publisherSet &&
 		edition.publisherSet.publishers.length > 0;
@@ -227,12 +234,13 @@ export function authorCreditToString(authorCredit) {
 }
 
 export function getEntityDisambiguation(entity) {
-	if(entity.disambiguation?.comment){
+	if (entity.disambiguation?.comment) {
 		return <small>{` (${entity.disambiguation.comment})`}</small>;
-	} else if(entity.disambiguation){
+	}
+	else if (entity.disambiguation) {
 		return <small>{` (${entity.disambiguation})`} </small>;
 	}
-  return null;
+	return null;
 }
 
 export function getEntitySecondaryAliases(entity) {
@@ -265,6 +273,8 @@ export const ENTITY_TYPE_ICONS = {
 	Series: faLayerGroup,
 	Work: faPenNib
 };
+
+export const ENTITY_TYPES = ['Author', 'Work', 'Series', 'Edition', 'EditionGroup', 'Publisher'];
 
 type FASize = FAProps['size'];
 export function genEntityIconHTMLElement(entityType: string, size: FASize = '1x', margin = true) {
