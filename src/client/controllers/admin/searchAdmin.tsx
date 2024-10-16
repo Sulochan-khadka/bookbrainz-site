@@ -1,7 +1,5 @@
 /*
- * Copyright (C) 2016  Daniel Hsing
- * 				 2015  Ben Ockmore
- *               2015  Sean Burke
+ * Copyright (C) 2023 Shivam Awasthi
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,39 +16,29 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-import {
-	extractEditorProps,
-	extractLayoutProps
-} from '../../helpers/props';
-import AchievementsTab from '../../components/pages/parts/editor-achievements';
+import {extractChildProps, extractLayoutProps} from '../../helpers/props';
 import {AppContainer} from 'react-hot-loader';
-import EditorContainer from '../../containers/editor';
 import Layout from '../../containers/layout';
 import React from 'react';
 import ReactDOM from 'react-dom';
+import SearchAdminPage from '../../components/pages/searchAdmin';
 
 
 const propsTarget = document.getElementById('props');
 const props = propsTarget ? JSON.parse(propsTarget.innerHTML) : {};
 
-ReactDOM.hydrate(
+const markup = (
 	<AppContainer>
 		<Layout {...extractLayoutProps(props)}>
-			<EditorContainer
-				{...extractEditorProps(props)}
-			>
-				<AchievementsTab
-					achievement={props.achievement}
-					currAchievement={props.currAchievement}
-					editor={props.editor}
-					isOwner={props.isOwner}
-				/>
-			</EditorContainer>
+			<SearchAdminPage
+				user={props.user}
+				{...extractChildProps(props)}
+			/>
 		</Layout>
-	</AppContainer>,
-	document.getElementById('target')
+	</AppContainer>
 );
 
+ReactDOM.hydrate(markup, document.getElementById('target'));
 
 /*
  * As we are not exporting a component,
